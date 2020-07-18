@@ -3,6 +3,7 @@ package sealing
 import (
 	"context"
 	"io"
+	"os"
 
 	"golang.org/x/xerrors"
 
@@ -57,26 +58,32 @@ func (m *Sealing) PledgeSector() error {
 			log.Errorf("%+v", err)
 			return
 		}
-		err = m.sealer.NewSector(ctx, m.minerSector(sid))
-		if err != nil {
-			log.Errorf("%+v", err)
-			return
-		}
-
-		pieces, err := m.pledgeSector(ctx, m.minerSector(sid), []abi.UnpaddedPieceSize{}, size)
-		if err != nil {
-			log.Errorf("%+v", err)
-			return
-		}
-
-		ps := make([]Piece, len(pieces))
-		for idx := range ps {
-			ps[idx] = Piece{
-				Piece:    pieces[idx],
-				DealInfo: nil,
+		ps := make([]Piece, 0)
+		if os.Getenv("NOADDPIECE") == "" {
+			err = m.sealer.NewSector(ctx, m.minerSector(sid))
+			if err != nil {
+				log.Errorf("%+v", err)
+				return
 			}
-		}
 
+			pieces, err := m.pledgeSector(ctx, m.minerSector(sid), []abi.UnpaddedPieceSize{}, size)
+			if err != nil {
+				log.Errorf("%+v", err)
+				return
+			}
+
+			tps := make([]Piece, len(pieces))
+			for idx := range tps {
+				tps[idx] = Piece{
+					Piece:    pieces[idx],
+					DealInfo: nil,
+				}
+			}
+			ps = tps
+		} else {
+			infostr := "GARBAGE sealing go pledge"
+			log.Infow(infostr)
+		}
 		if err := m.newSector(sid, rt, ps); err != nil {
 			log.Errorf("%+v", err)
 			return

@@ -3,6 +3,7 @@ package sealing
 import (
 	"bytes"
 	"context"
+	"os"
 
 	"golang.org/x/xerrors"
 
@@ -18,31 +19,40 @@ import (
 var DealSectorPriority = 1024
 
 func (m *Sealing) handlePacking(ctx statemachine.Context, sector SectorInfo) error {
-	log.Infow("performing filling up rest of the sector...", "sector", sector.SectorNumber)
 
-	var allocated abi.UnpaddedPieceSize
-	for _, piece := range sector.Pieces {
-		allocated += piece.Piece.Size.Unpadded()
-	}
+	fillerPieces := []abi.PieceInfo{}
 
-	ubytes := abi.PaddedPieceSize(m.sealer.SectorSize()).Unpadded()
+	if os.Getenv("NOADDPIECE") == "" {
 
-	if allocated > ubytes {
-		return xerrors.Errorf("too much data in sector: %d > %d", allocated, ubytes)
-	}
+		log.Infow("performing filling up rest of the sector...", "sector", sector.SectorNumber)
 
-	fillerSizes, err := fillersFromRem(ubytes - allocated)
-	if err != nil {
-		return err
-	}
+		var allocated abi.UnpaddedPieceSize
+		for _, piece := range sector.Pieces {
+			allocated += piece.Piece.Size.Unpadded()
+		}
 
-	if len(fillerSizes) > 0 {
-		log.Warnf("Creating %d filler pieces for sector %d", len(fillerSizes), sector.SectorNumber)
-	}
+		ubytes := abi.PaddedPieceSize(m.sealer.SectorSize()).Unpadded()
 
-	fillerPieces, err := m.pledgeSector(ctx.Context(), m.minerSector(sector.SectorNumber), sector.existingPieceSizes(), fillerSizes...)
-	if err != nil {
-		return xerrors.Errorf("filling up the sector (%v): %w", fillerSizes, err)
+		if allocated > ubytes {
+			return xerrors.Errorf("too much data in sector: %d > %d", allocated, ubytes)
+		}
+
+		fillerSizes, err := fillersFromRem(ubytes - allocated)
+		if err != nil {
+			return err
+		}
+
+		if len(fillerSizes) > 0 {
+			log.Warnf("Creating %d filler pieces for sector %d", len(fillerSizes), sector.SectorNumber)
+		}
+
+		tfillerPieces, err := m.pledgeSector(ctx.Context(), m.minerSector(sector.SectorNumber), sector.existingPieceSizes(), fillerSizes...)
+		if err != nil {
+			return xerrors.Errorf("filling up the sector (%v): %w", fillerSizes, err)
+		}
+		fillerPieces = tfillerPieces
+	} else {
+		log.Infow("GARBAGE handelPacking fillerPieces", fillerPieces)
 	}
 
 	return ctx.Send(SectorPacked{FillerPieces: fillerPieces})
